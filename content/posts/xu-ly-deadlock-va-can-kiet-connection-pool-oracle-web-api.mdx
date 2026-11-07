@@ -1,0 +1,222 @@
+---
+title: "Xử lý ORA-00060 Deadlock và cạn kiệt Connection Pool trên Oracle 19c & Web API"
+slug: "xu-ly-deadlock-va-can-kiet-connection-pool-oracle-web-api"
+postType: "post-mortem"
+category: "database-sql"
+tags:
+  - "oracle"
+  - "plsql"
+  - "deadlock"
+  - "connection-pool"
+  - "web-api"
+  - "dotnet-framework"
+publishedAt: "2026-09-18"
+updatedAt: "2026-10-02"
+summary: "Báo cáo điều tra sự cố khóa chéo ORA-00060 kéo theo bão cạn kiệt ODP.NET Connection Pool trên hệ thống giao dịch cao tải và giải pháp khắc phục triệt để."
+environment:
+  - ".NET Framework 4.8"
+  - "ASP.NET Web API 2"
+  - "Oracle 19c"
+  - "ODP.NET"
+  - "IIS 10"
+impact: "Loại bỏ 100% lỗi ORA-00060 Deadlock & giảm 85% thời gian giữ kết nối"
+series:
+  name: "Tối ưu hiệu năng CSDL doanh nghiệp"
+  order: 1
+featured: true
+draft: false
+sanitized: true
+---
+
+## 1. Bối cảnh vận hành & Diễn biến sự cố
+
+Trong đợt cao điểm đối soát đơn hàng đầu giờ sáng (khoảng `420 RPS` hướng vào cụm dịch vụ xử lý kho vận và thanh toán), cụm máy chủ **ASP.NET Web API 2** (`.NET Framework 4.8` trên `IIS 10`) bắt đầu ghi nhận hàng loạt phản hồi `HTTP 503` và ngoại lệ timeout khi mở kết nối tới cơ sở dữ liệu **Oracle 19c**.
+
+Chỉ trong vòng 4 phút kể từ khi xuất hiện cảnh báo đầu tiên, toàn bộ `Max Pool Size = 150` kết nối của mỗi worker process bị chiếm giữ hoàn toàn, kéo theo hiệu ứng dây chuyền làm nghẽn các API đọc danh mục không liên quan dùng chung chuỗi kết nối `app_order_svc`.
+
+<Callout type="symptom" title="Hai nhóm ngoại lệ xuất hiện nối tiếp trên Application Log">
+  Ban đầu hệ thống xuất hiện rải rác lỗi `ORA-00060: deadlock detected while waiting for resource` tại thủ tục `PKG_INVENTORY.RESERVE_ITEMS`. Ngay sau đó 90 giây, tầng ứng dụng bùng phát hàng nghìn lỗi `OracleException: Connection request timed out` do không thể mượn kết nối rảnh từ ODP.NET Connection Pool.
+</Callout>
+
+## 2. Quá trình điều tra & Truy vết dấu hiệu từ Oracle Trace
+
+Thay vì vội vàng tăng `Max Pool Size` trên `IIS` — một phản xạ thường chỉ đẩy điểm nghẽn sâu hơn vào tầng tiến trình của Oracle — nhóm kỹ thuật tiến hành thu thập đồng thời truy vấn phiên chờ khóa trực tiếp trên `v$session` và trích xuất tệp `alert/trace` của tiến trình nền PMON/LGWR tại máy chủ `db-rac01.internal.example.com`.
+
+```sql title="check-blocking-sessions.sql"
+SELECT
+    s.sid,
+    s.serial#,
+    s.username,
+    s.blocking_session,
+    s.event,
+    s.seconds_in_wait,
+    o.object_name,
+    s.sql_id
+FROM v$session s
+LEFT JOIN v$locked_object lo ON s.sid = lo.session_id
+LEFT JOIN dba_objects o ON lo.object_id = o.object_id
+WHERE s.username = 'APP_ORDER_SVC'
+  AND (s.blocking_session IS NOT NULL OR s.seconds_in_wait > 3)
+ORDER BY s.seconds_in_wait DESC;
+```
+
+Kết quả truy vấn cho thấy hàng chục phiên đang xếp hàng chờ sự kiện `enq: TX - row lock contention` trên hai bảng `INVENTORY_STOCK` và `ORDERS`, với thời gian giữ phiên kéo dài bất thường từ `8 giây` đến `15 giây`. Đối chiếu tiếp đồ thị khóa chéo (Deadlock Graph) trong tệp trace của Oracle 19c đã làm lộ diện nguyên nhân trực tiếp:
+
+```text title="ora-00060-deadlock-graph.txt"
+Deadlock graph:
+                                          ------------Blocker(s)-----------  ------------Waiter(s)------------
+Resource Name                             process session holds waits serial  process session holds waits serial
+TX-000A001B-00048219-00000000-00000000         64     418     X          8912      71     509           X   3310
+TX-000C0004-00039104-00000000-00000000         71     509     X          3310      64     418           X   8912
+
+Rows waited on:
+  Session 418: obj - rowid = 00018A42 - AAAYpCAAFAAA7LmAAA (table INVENTORY_STOCK, ITEM_ID = 100208)
+  Session 509: obj - rowid = 00018A42 - AAAYpCAAFAAA7LmAAB (table INVENTORY_STOCK, ITEM_ID = 100105)
+```
+
+<Callout type="investigation" title="Phát hiện mắt xích khuếch đại thời gian giữ khóa ở tầng C#">
+  Nếu chỉ đơn thuần là khóa chéo giữa 2 dòng, Oracle phát hiện `ORA-00060` trong khoảng `3 giây` và hủy câu lệnh của 1 phiên. Vậy tại sao hơn 140 phiên khác lại bị treo tới `15 giây` làm cạn sạch Connection Pool? Khi rà soát lớp `OrderFulfillmentService.cs`, chúng tôi phát hiện lời gọi HTTP đồng bộ sang cổng thông báo vận chuyển đặt **nằm ngay bên trong khối giao dịch** đang giữ row lock của Oracle.
+</Callout>
+
+## 3. Phân tích nguyên nhân gốc rễ (Root Cause Analysis)
+
+Sự cố là kết quả cộng hưởng của **3 lỗi thiết kế kinh điển** giữa tầng ứng dụng `.NET` và tầng thủ tục `PL/SQL`:
+
+<Callout type="root-cause" title="Ba nguyên nhân gốc rễ gây sập Connection Pool">
+  1. **Thứ tự khóa dòng không tất định trong PL/SQL:** Thủ tục `RESERVE_ITEMS` duyệt danh sách mặt hàng theo đúng thứ tự mảng do Client gửi lên. Phiên A khóa `[100105 -> 100208]` cùng lúc Phiên B khóa `[100208 -> 100105]` trên cùng mặt hàng khuyến mãi nóng, tạo vòng lặp chờ `TX` trực tiếp.
+  2. **Thực hiện Network I/O bên trong Transaction CSDL:** Tầng Web API mở `OracleTransaction`, trừ tồn kho xong lại gọi tiếp `HttpClient` sang dịch vụ đối tác (`timeout = 15s`) trước khi gọi `Commit()`. Khi đối tác phản hồi chậm, mọi row lock trên các mặt hàng bán chạy bị ngâm cứng suốt 15 giây.
+  3. **Rò rỉ kết nối ngắn hạn trên nhánh ngoại lệ:** Một phương thức kế thừa khởi tạo `OracleCommand` và `OracleConnection` thủ công nhưng thiếu khối `using` bao ngoài cùng khi bắt ngoại lệ nghiệp vụ, khiến kết nối phải chờ bộ dọn rác (GC Finalizer) mới trả về pool.
+</Callout>
+
+## 4. Giải pháp khắc phục triệt để ở cả 3 tầng
+
+### 4.1. Chuẩn hóa thứ tự khóa tăng dần & dùng FORALL trong PL/SQL
+
+Nguyên tắc bất biến để triệt tiêu Deadlock khi cập nhật nhiều bản ghi trên cùng một bảng là **luôn ép mọi giao dịch chiếm giữ khóa theo đúng một thứ tự khóa chính duy nhất** (`ORDER BY item_id ASC`) trước khi thực hiện `FOR UPDATE` và cập nhật hàng loạt bằng `FORALL`:
+
+```plsql title="pkg_inventory_reserve.pks.sql"
+CREATE OR REPLACE PROCEDURE prc_reserve_stock_sorted (
+    p_order_id   IN  NUMBER,
+    p_item_ids   IN  SYS.ODCINUMBERLIST,
+    p_quantities IN  SYS.ODCINUMBERLIST
+) AS
+    TYPE t_line_rec IS RECORD (
+        item_id  NUMBER,
+        qty      NUMBER
+    );
+    TYPE t_line_tab IS TABLE OF t_line_rec;
+    l_sorted_lines t_line_tab;
+BEGIN
+    -- Bước 1: Gom và sắp xếp tăng dần theo ITEM_ID để khóa theo thứ tự tất định 100%
+    SELECT item_id, SUM(qty)
+    BULK COLLECT INTO l_sorted_lines
+    FROM (
+        SELECT
+            COLUMN_VALUE AS item_id,
+            p_quantities( ROWNUM ) AS qty
+        FROM TABLE(p_item_ids)
+    )
+    GROUP BY item_id
+    ORDER BY item_id ASC;
+
+    -- Bước 2: Khóa trước các dòng cần trừ tồn theo đúng thứ tự đã sắp xếp (chờ tối đa 3s)
+    FOR i IN 1 .. l_sorted_lines.COUNT LOOP
+        DECLARE
+            l_available NUMBER;
+        BEGIN
+            SELECT available_qty
+            INTO l_available
+            FROM inventory_stock
+            WHERE item_id = l_sorted_lines(i).item_id
+            FOR UPDATE WAIT 3;
+
+            IF l_available < l_sorted_lines(i).qty THEN
+                RAISE_APPLICATION_ERROR(-20010, 'Insufficient stock for item ' || l_sorted_lines(i).item_id);
+            END IF;
+        END;
+    END LOOP;
+
+    -- Bước 3: Cập nhật lô bằng FORALL giảm tối đa Context Switch giữa PL/SQL và SQL Engine
+    FORALL i IN 1 .. l_sorted_lines.COUNT
+        UPDATE inventory_stock
+        SET available_qty = available_qty - l_sorted_lines(i).qty,
+            updated_at    = SYSTIMESTAMP
+        WHERE item_id = l_sorted_lines(i).item_id;
+
+    UPDATE orders
+    SET status = 'STOCK_RESERVED', updated_at = SYSTIMESTAMP
+    WHERE order_id = p_order_id;
+END prc_reserve_stock_sorted;
+/
+```
+
+### 4.2. Tách biệt hoàn toàn lời gọi HTTP ra khỏi phạm vi giao dịch CSDL
+
+Tại tầng **ASP.NET Web API 2**, chúng tôi áp dụng mẫu **Transactional Outbox** thu gọn: giao dịch Oracle chỉ thực hiện trừ kho + ghi một bản ghi sự kiện vào bảng `OUTBOX_EVENTS` rồi `Commit()` và đóng kết nối ngay lập tức trong vài mili-giây:
+
+```csharp title="OrderFulfillmentService.cs" {10-11,25-27}
+public async Task ConfirmOrderAsync(OrderConfirmDto request, CancellationToken ct)
+{
+    // Đảm bảo trả kết nối về ODP.NET Pool ngay khi ra khỏi phạm vi using
+    using (var connection = new OracleConnection(_connectionString))
+    {
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using (var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted))
+        {
+            try
+            {
+                await _inventoryRepo.ReserveStockSortedAsync(connection, transaction, request, ct)
+                    .ConfigureAwait(false);
+                await _outboxRepo.InsertShippingDispatchEventAsync(connection, transaction, request.OrderId, ct)
+                    .ConfigureAwait(false);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+    }
+
+    // Giao dịch CSDL và kết nối Oracle đã được giải phóng hoàn toàn tại điểm này
+    _backgroundDispatcher.TrySignalImmediateFlush();
+}
+```
+
+### 4.3. Tinh chỉnh thông số bảo vệ ODP.NET Connection Pool
+
+Để ngăn hiệu ứng một luồng truy vấn nặng làm tê liệt toàn bộ ứng dụng, chúng tôi tách riêng chuỗi kết nối cho luồng ghi giao dịch và luồng đọc danh mục, đồng thời cấu hình ngưỡng tự phục hồi rõ ràng trong `Web.config`:
+
+```xml title="Web.config"
+<connectionStrings>
+  <add name="OracleTransactionalWritePool"
+       connectionString="Data Source=db-rac01.internal.example.com:1521/ORCLPDB1;User Id=app_order_svc;Password=***;Pooling=true;Min Pool Size=15;Max Pool Size=80;Incr Pool Size=5;Decr Pool Size=2;Connection Timeout=5;Connection Lifetime=1200;Self Tuning=true;"
+       providerName="Oracle.ManagedDataAccess.Client" />
+</connectionStrings>
+```
+
+<Callout type="solution" title="Nguyên tắc cấu hình Connection Timeout ngắn (Fail-Fast)">
+  Đặt `Connection Timeout=5` (thay vì mặc định `15` giây) giúp tầng API phản hồi lỗi nhanh khi hạ tầng CSDL gặp sự cố thực sự, bảo vệ Worker Thread của IIS không bị dồn ứ hàng đợi (Thread Pool Starvation).
+</Callout>
+
+<Callout type="warning" title="Lưu ý về Validate Connection trên ODP.NET">
+  Tránh bật `Validate Connection=true` trên các hệ thống tần suất hàng trăm RPS vì ODP.NET sẽ phát sinh thêm 1 vòng lặp ping kiểm tra kết nối mỗi lần mượn từ pool. Trên `Oracle.ManagedDataAccess` hiện đại, cơ chế thông báo sự kiện FAN/ONS và kiểm tra nội tại của driver đã đủ tin cậy mà không tốn thêm round-trip mạng.
+</Callout>
+
+## 5. Số liệu đo kiểm Trước & Sau khi triển khai
+
+Sau khi triển khai bản vá lên môi trường Production và theo dõi xuyên suốt 3 kỳ cao điểm kế tiếp với lưu lượng tương đương (`420 - 460 RPS`), các chỉ số vận hành đã ổn định hoàn toàn:
+
+<Callout type="benchmark" title="Kết quả đo kiểm thực tế từ Oracle AWR & APM trong khung giờ cao điểm">
+  Thời gian trung bình một phiên ứng dụng mượn kết nối từ ODP.NET Pool giảm từ `2,180 ms` xuống chỉ còn `14 ms`, số lượng kết nối vật lý hoạt động đồng thời hiếm khi vượt quá `18` kết nối dù tải đầu vào tăng 10%.
+</Callout>
+
+| Chỉ số giám sát | Trước khắc phục | Sau khắc phục | Thay đổi |
+| :--- | :--- | :--- | :--- |
+| Số lỗi `ORA-00060 Deadlock` / ngày | `64 lần` | `0 lần` | `-100%` |
+| Số lỗi `Connection request timed out` | `3,820 lỗi / đợt` | `0 lỗi` | `-100%` |
+| Thời gian giữ kết nối trung bình | `2,180 ms` | `14 ms` | `-99.3%` |
+| Số kết nối Active đồng thời tối đa | `150 / 150` (Bão hòa) | `22 / 80` | `-85.3%` |
+| Độ trễ API đặt hàng (P99) | `15,200 ms` | `92 ms` | `-99.4%` |

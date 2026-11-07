@@ -1,0 +1,45 @@
+---
+title: "Mẫu sổ tay tra cứu nhanh cấu hình & quy chuẩn triển khai (Reference Template)"
+slug: "reference"
+postType: "reference"
+category: "devops-modern-web"
+tags:
+  - "docker"
+  - "nextjs"
+  - "ci-cd"
+publishedAt: "2026-11-01"
+summary: "Khuôn mẫu sổ tay kỹ thuật cô đọng giúp tra cứu cấu hình chuẩn, lệnh kiểm tra và các lưu ý an toàn trong 30 giây."
+environment:
+  - "Docker 27"
+  - "Next.js 16"
+  - "Alpine Linux"
+featured: false
+draft: true
+sanitized: false
+---
+
+{/*
+  CHECKLIST 5 BƯỚC ẨN DANH HÓA BẮT BUỘC TRƯỚC KHI ĐẶT sanitized: true VÀ draft: false (docs/PRD.md Mục 4)
+*/}
+
+## 1. Cấu hình chuẩn sẵn sàng sử dụng
+
+```dockerfile title="Dockerfile"
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]
+```
+
+<Callout type="warning" title="Ràng buộc bảo mật bắt buộc">
+  Tuyệt đối không đóng gói tệp `.env` chứa khóa bí mật vào bên trong lớp Docker Image và luôn chạy container bằng tài khoản non-root.
+</Callout>
+
+## 2. Lệnh kiểm tra & Chẩn đoán nhanh
+
+```bash title="verify.sh"
+docker build -t app-web:latest .
+docker images app-web:latest
+```

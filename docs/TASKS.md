@@ -41,7 +41,7 @@
 
 ---
 
-## [ ] TASK-03: Xây dựng MDX Compilation Pipeline (15 Ngôn ngữ), 6 Callouts, Khối Code & 3 Bài viết Mẫu
+## [x] TASK-03: Xây dựng MDX Compilation Pipeline (15 Ngôn ngữ), 6 Callouts, Khối Code & 3 Bài viết Mẫu
 - **Mục tiêu:** Xây dựng bộ biên dịch MDX trên Server với `rehype-pretty-code` + `shiki` (15 ngôn ngữ), 6 loại `<Callout>`, khung code kèm nút Copy, 3 file template và 3 bài viết MVP hoàn chỉnh.
 - **Phạm vi file cho phép:**
   - MDX Pipeline & Components: `src/lib/mdx.ts`, `src/components/mdx/Callout.tsx`, `src/components/mdx/PreBlock.tsx`, `src/components/mdx/CodeBlockCopyButton.tsx` (**Client #5**).

@@ -1,0 +1,58 @@
+---
+title: "Mẫu bài viết phân tích chuyên sâu kiến trúc & tối ưu hiệu năng (Deep-dive Template)"
+slug: "deep-dive"
+postType: "deep-dive"
+category: "dotnet-backend"
+tags:
+  - "dotnet"
+  - "csharp"
+  - "sql-optimization"
+publishedAt: "2026-11-01"
+summary: "Khuôn mẫu bài viết phân tích chuyên sâu kiến trúc hệ thống, bản chất hoạt động bên dưới và bảng đánh đổi kỹ thuật."
+environment:
+  - ".NET 8"
+  - "Oracle 19c"
+impact: "Tăng thông lượng xử lý gấp 8 lần và giảm 70% cấp phát bộ nhớ Gen 2"
+featured: false
+draft: true
+sanitized: false
+---
+
+{/*
+  CHECKLIST 5 BƯỚC ẨN DANH HÓA BẮT BUỘC TRƯỚC KHI ĐẶT sanitized: true VÀ draft: false (docs/PRD.md Mục 4)
+*/}
+
+## 1. Đặt vấn đề & Giới hạn của cách tiếp cận truyền thống
+
+Mô tả bài toán thực tế ở quy mô dữ liệu lớn và lý do các mẫu triển khai mặc định trở thành điểm nghẽn hiệu năng.
+
+## 2. Phân tích cơ chế bên dưới (Under the Hood)
+
+Đi sâu vào cách Database Optimizer lập kế hoạch thực thi hoặc cách CLR quản lý bộ nhớ và luồng bất đồng bộ.
+
+```text title="execution-plan.txt"
+------------------------------------------------------------------------------------
+| Id  | Operation          | Name   | Rows  | Bytes | Cost (%CPU)| Time     |
+------------------------------------------------------------------------------------
+|   0 | SELECT STATEMENT   |        |  1500K|   140M| 48210   (2)| 00:00:02 |
+|*  1 |  TABLE ACCESS FULL | ORDERS |  1500K|   140M| 48210   (2)| 00:00:02 |
+------------------------------------------------------------------------------------
+```
+
+## 3. So sánh các phương án & Đánh đổi kỹ thuật (Trade-offs)
+
+| Tiêu chí đánh giá | Phương án A (Cơ bản) | Phương án B (Tối ưu hóa) | Ghi chú áp dụng |
+| :--- | :--- | :--- | :--- |
+| Độ phức tạp triển khai | Thấp | Trung bình | Cần kiểm soát chỉ mục |
+| Chi phí bộ nhớ RAM | Cao (`O(N)`) | Cố định (`O(1)` streaming) | Phù hợp tập dữ liệu lớn |
+| Độ trễ truy vấn | Tăng tuyến tính theo trang | Ổn định dưới `50 ms` | Khuyến nghị cho Production |
+
+<Callout type="warning" title="Lưu ý về đánh đổi kiến trúc">
+  Nêu rõ các điều kiện biên hoặc trường hợp KHÔNG nên áp dụng kỹ thuật này để độc giả có góc nhìn khách quan.
+</Callout>
+
+## 4. Triển khai chi tiết & Kết quả Benchmark
+
+<Callout type="benchmark" title="Số liệu đo kiểm trên tập dữ liệu 2 triệu bản ghi">
+  Tổng hợp kết quả đo kiểm độc lập trước và sau khi áp dụng kỹ thuật tối ưu.
+</Callout>

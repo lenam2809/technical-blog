@@ -1,0 +1,206 @@
+---
+title: "Sổ tay đóng gói Next.js 16 Standalone và .NET 8 API với Docker Multi-stage"
+slug: "so-tay-dong-goi-nextjs-va-dotnet-api-voi-docker-multi-stage"
+postType: "reference"
+category: "devops-modern-web"
+tags:
+  - "docker"
+  - "docker-compose"
+  - "nextjs"
+  - "dotnet"
+  - "ci-cd"
+  - "linux"
+publishedAt: "2026-10-28"
+summary: "Tài liệu tra cứu nhanh cấu hình Multi-stage Dockerfile chuẩn bảo mật non-root user, tối ưu lớp cache, healthcheck và mạng nội bộ Docker Compose cho Production."
+environment:
+  - "Next.js 16"
+  - ".NET 8 API"
+  - "Docker 27"
+  - "Docker Compose"
+  - "Alpine Linux"
+impact: "Giảm dung lượng Docker Image từ 1.2GB xuống 145MB (-88%)"
+featured: true
+draft: false
+sanitized: true
+---
+
+## 1. Dockerfile Multi-stage cho Next.js 16 (`output: 'standalone'`)
+
+Yêu cầu bắt buộc trong `next.config.ts`: bật `output: 'standalone'` để trình biên dịch tự động phân tích cây phụ thuộc (`@vercel/nft`) và chỉ trích xuất đúng tập tệp tối thiểu cần thiết vào `.next/standalone` thay vì mang theo toàn bộ `node_modules`.
+
+```dockerfile title="apps/web/Dockerfile" {24-28}
+# syntax=docker/dockerfile:1.7
+
+FROM node:22-alpine AS deps
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+RUN npm run build
+
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+RUN addgroup --system --gid 1001 nodejs \
+    && adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/ || exit 1
+
+CMD ["node", "server.js"]
+```
+
+<Callout type="warning" title="Hai lỗi thường gặp với chế độ Standalone của Next.js">
+  1. Thư mục `.next/standalone` **không** tự động chép `public/` và `.next/static/` — bắt buộc phải có 2 lệnh `COPY` riêng như trên, nếu thiếu giao diện sẽ mất toàn bộ CSS và ảnh tĩnh.
+  2. Biến `HOSTNAME="0.0.0.0"` là bắt buộc để tiến trình `server.js` lắng nghe kết nối từ Reverse Proxy bên ngoài container.
+</Callout>
+
+## 2. Dockerfile Multi-stage cho .NET 8 Web API (Hỗ trợ Tiếng Việt & Múi giờ)
+
+Image `aspnet:8.0-alpine` mặc định bật `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true`. Khi ứng dụng xử lý định dạng văn bản tiếng Việt (`vi-VN`), tiền tệ hoặc kết nối Oracle có bảng mã vùng, cần cài đặt tường minh `icu-libs` và `tzdata`:
+
+```dockerfile title="services/api/Dockerfile" {15-19}
+# syntax=docker/dockerfile:1.7
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
+WORKDIR /src
+COPY ["Portfolio.Api/Portfolio.Api.csproj", "Portfolio.Api/"]
+RUN dotnet restore "Portfolio.Api/Portfolio.Api.csproj"
+
+COPY . .
+RUN dotnet publish "Portfolio.Api/Portfolio.Api.csproj" \
+    -c Release \
+    -o /app/publish \
+    /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS final
+RUN apk add --no-cache icu-libs tzdata curl
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+ENV TZ=Asia/Ho_Chi_Minh
+ENV ASPNETCORE_URLS=http://+:8080
+
+WORKDIR /app
+COPY --from=build --chown=app:app /app/publish .
+
+# Image .NET 8 cung cấp sẵn non-root user 'app' (UID 1654)
+USER app
+EXPOSE 8080
+
+CMD ["dotnet", "Portfolio.Api.dll"]
+```
+
+## 3. Cấu hình Docker Compose Production với Mạng Nội Bộ Cô Lập
+
+Chỉ mở cổng cần thiết ra tầng Reverse Proxy và đặt giới hạn tài nguyên (`deploy.resources.limits`) để bảo vệ máy chủ VPS:
+
+```yaml title="docker-compose.yml"
+services:
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: app-dotnet-api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__AppDb: ${DB_CONNECTION_STRING}
+    networks:
+      - internal_net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 512M
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: app-nextjs-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      INTERNAL_API_URL: http://api:8080
+    networks:
+      - internal_net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 384M
+
+networks:
+  internal_net:
+    driver: bridge
+```
+
+## 4. Quy chuẩn Endpoint Healthcheck & Lệnh Kiểm Tra Nhanh
+
+Phản hồi chuẩn từ endpoint `/healthz` của `.NET 8 API` phục vụ giám sát tự động:
+
+```http title="healthcheck-request.http"
+GET http://127.0.0.1:8080/healthz HTTP/1.1
+Host: api.internal.example.com
+Accept: application/json
+```
+
+```json title="healthcheck-response.json"
+{
+  "status": "Healthy",
+  "version": "1.4.2",
+  "checks": {
+    "oracle_db": "Up",
+    "uptimeSeconds": 86420
+  }
+}
+```
+
+Tập lệnh xây dựng, kiểm tra quyền non-root và đo kích thước Image trước khi đẩy lên Container Registry:
+
+```bash title="verify-containers.sh"
+# 1. Build song song với BuildKit
+DOCKER_BUILDKIT=1 docker compose build --parallel
+
+# 2. Xác nhận tiến trình chạy dưới quyền non-root (kết quả phải là 'nextjs' và 'app', KHÔNG phải 'root')
+docker compose run --rm web whoami
+docker compose run --rm api whoami
+
+# 3. Kiểm tra dung lượng đóng gói thực tế
+docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" | grep -E "web|api"
+```
+
+<Callout type="benchmark" title="Đối chiếu dung lượng Image & thời gian khởi động">
+  Chuyển từ image nền Debian mặc định (`node:22` / `dotnet/sdk`) sang kiến trúc Multi-stage trên `alpine` kết hợp `output: 'standalone'` giúp rút ngắn 75% thời gian kéo image trong đường ống CI/CD.
+</Callout>
+
+| Dịch vụ | Đóng gói đơn tầng (Single-stage) | Multi-stage Alpine chuẩn hóa | Mức giảm |
+| :--- | :--- | :--- | :--- |
+| Next.js 16 Web | `1,210 MB` | `145 MB` | **`-88.0%`** |
+| .NET 8 Web API | `845 MB` | `118 MB` | **`-86.0%`** |

@@ -1,0 +1,81 @@
+---
+title: "Mẫu báo cáo xử lý sự cố kỹ thuật thực tế (Post-mortem Template)"
+slug: "post-mortem"
+postType: "post-mortem"
+category: "database-sql"
+tags:
+  - "oracle"
+  - "deadlock"
+publishedAt: "2026-11-01"
+summary: "Khuôn mẫu chuẩn hóa quy trình điều tra nguyên nhân gốc rễ, khắc phục sự cố hệ thống và đo kiểm kết quả sau tối ưu hóa."
+environment:
+  - ".NET 8"
+  - "Oracle 19c"
+  - "Linux RHEL 9"
+impact: "Giảm 99% tỷ lệ lỗi timeout và khôi phục độ ổn định SLA 99.95%"
+featured: false
+draft: true
+sanitized: false
+---
+
+{/*
+  CHECKLIST 5 BƯỚC ẨN DANH HÓA BẮT BUỘC TRƯỚC KHI ĐẶT sanitized: true VÀ draft: false (docs/PRD.md Mục 4):
+  1. Đổi toàn bộ tên công ty, dự án, bảng/cột đặc thù sang miền trung lập (ORDERS, INVENTORY, PAYMENTS).
+  2. Thay IP, hostname, connection string thật bằng chuẩn RFC (10.0.10.25, db.internal.example.com, app_user).
+  3. Xóa PII, token, tên schema thật trong log, Stack Trace, AWR và Execution Plan.
+  4. Chỉ giữ số liệu kỹ thuật (ms, RPS, CPU/RAM, %), tuyệt đối không đưa số liệu tài chính/doanh thu.
+  5. Viết lại code dưới dạng Minimal Reproducible Example độc lập.
+*/}
+
+## 1. Bối cảnh hệ thống & Phạm vi ảnh hưởng
+
+Mô tả kiến trúc luồng dữ liệu liên quan, lưu lượng tải tại thời điểm xảy ra sự cố và tác động kỹ thuật ghi nhận được trên hệ thống giám sát.
+
+<Callout type="symptom" title="Triệu chứng ghi nhận trên Production">
+  Nêu rõ mã lỗi ngoại lệ, biến động độ trễ P95/P99 hoặc cảnh báo tài nguyên (CPU, Connection Pool, Lock Wait).
+</Callout>
+
+## 2. Quá trình điều tra & Kiểm chứng giả thuyết
+
+Trình bày từng bước thu thập bằng chứng từ Application Log, Database Trace hoặc Execution Plan.
+
+<Callout type="investigation" title="Phân tích dấu vết từ Log & Database View">
+  Tóm tắt các giả thuyết đã đặt ra, cách loại trừ giả thuyết sai và bằng chứng dẫn tới nút thắt thật sự.
+</Callout>
+
+```sql title="diagnostic-locks.sql"
+SELECT s.sid, s.serial#, s.blocking_session, s.event, s.seconds_in_wait
+FROM v$session s
+WHERE s.blocking_session IS NOT NULL;
+```
+
+## 3. Nguyên nhân gốc rễ (Root Cause Analysis)
+
+<Callout type="root-cause" title="Cơ chế gây lỗi ở tầng kiến trúc / truy vấn">
+  Giải thích chính xác điều kiện tương tranh (race condition), thứ tự giữ khóa hoặc cấu hình sai lệch dẫn đến sự cố.
+</Callout>
+
+## 4. Giải pháp khắc phục & Phòng ngừa tái diễn
+
+<Callout type="solution" title="Thay đổi mã nguồn & Cấu hình hạ tầng">
+  Mô tả giải pháp ngắn hạn (mitigation) và giải pháp triệt để dài hạn kèm lý do lựa chọn.
+</Callout>
+
+```csharp title="OrderService.cs"
+public async Task ProcessOrderAsync(long orderId, CancellationToken ct)
+{
+    // Minh họa Minimal Reproducible Example sau khi khắc phục
+    await _repository.ConfirmOrderDeterministicAsync(orderId, ct);
+}
+```
+
+## 5. Kết quả đo kiểm thực tế & Bài học kinh nghiệm
+
+<Callout type="benchmark" title="Đối chiếu chỉ số Trước và Sau khi triển khai">
+  Cung cấp bảng số liệu đo kiểm cụ thể (Latency, Throughput, Error Rate, Resource Usage) để chứng minh hiệu quả.
+</Callout>
+
+| Chỉ số kỹ thuật | Trước khắc phục | Sau khắc phục | Mức cải thiện |
+| :--- | :--- | :--- | :--- |
+| Độ trễ P99 | `12,400 ms` | `85 ms` | `-99.3%` |
+| Lỗi khóa chéo / ngày | `42 lần` | `0 lần` | `-100%` |
