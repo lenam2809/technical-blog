@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+build/
+next-env.d.ts
+
+# Static search index (generated at build time in TASK-07)
+public/pagefind/
+
+# Testing & coverage
+coverage/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env*.local
+
+# OS & Editor artifacts
+.DS_Store
+Thumbs.db

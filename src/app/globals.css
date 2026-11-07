@@ -1,0 +1,112 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo,
+    Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* ==========================================================================
+   DESIGN TOKENS — LIGHT MODE (:root) — docs/DESIGN.md (WCAG AA Baseline)
+   ========================================================================== */
+:root {
+  color-scheme: light;
+
+  /* 2.1 Surface & Text Tokens */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F8FAFC;
+  --bg-elevated: #F1F5F9;
+  --bg-code: #0F172A;
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-muted: #64748B;
+  --border-subtle: #E2E8F0;
+  --border-strong: #CBD5E1;
+  --accent-primary: #2563EB;
+  --accent-emerald: #059669;
+
+  /* 2.2 Technical Callout Tokens (6 Archetype Modes) */
+  --callout-symptom-border: #DC2626;
+  --callout-symptom-bg: #FEF2F2;
+  --callout-investigation-border: #D97706;
+  --callout-investigation-bg: #FFFBEB;
+  --callout-root-cause-border: #9333EA;
+  --callout-root-cause-bg: #FAF5FF;
+  --callout-solution-border: #059669;
+  --callout-solution-bg: #ECFDF5;
+  --callout-benchmark-border: #0284C7;
+  --callout-benchmark-bg: #F0F9FF;
+  --callout-warning-border: #EA580C;
+  --callout-warning-bg: #FFF7ED;
+
+  /* 2.3 PostType Badge Tokens (3 Content Archetypes) */
+  --badge-post-mortem-bg: #FEF2F2;
+  --badge-post-mortem-text: #DC2626;
+  --badge-deep-dive-bg: #EFF6FF;
+  --badge-deep-dive-text: #2563EB;
+  --badge-reference-bg: #F0FDF4;
+  --badge-reference-text: #16A34A;
+}
+
+/* ==========================================================================
+   DESIGN TOKENS — DARK MODE (.dark) — docs/DESIGN.md (WCAG AA Baseline)
+   ========================================================================== */
+.dark {
+  color-scheme: dark;
+
+  /* 2.1 Surface & Text Tokens */
+  --bg-primary: #0B0F17;
+  --bg-secondary: #111827;
+  --bg-elevated: #1E293B;
+  --bg-code: #090D16;
+  --text-primary: #F8FAFC;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+  --border-subtle: #1E293B;
+  --border-strong: #334155;
+  --accent-primary: #3B82F6;
+  --accent-emerald: #10B981;
+
+  /* 2.2 Technical Callout Tokens (6 Archetype Modes) */
+  --callout-symptom-border: #F87171;
+  --callout-symptom-bg: rgba(127, 29, 29, 0.2);
+  --callout-investigation-border: #FBBF24;
+  --callout-investigation-bg: rgba(120, 53, 15, 0.2);
+  --callout-root-cause-border: #C084FC;
+  --callout-root-cause-bg: rgba(88, 28, 135, 0.2);
+  --callout-solution-border: #34D399;
+  --callout-solution-bg: rgba(6, 78, 59, 0.2);
+  --callout-benchmark-border: #38BDF8;
+  --callout-benchmark-bg: rgba(12, 74, 110, 0.2);
+  --callout-warning-border: #FB923C;
+  --callout-warning-bg: rgba(124, 45, 18, 0.2);
+
+  /* 2.3 PostType Badge Tokens (3 Content Archetypes) */
+  --badge-post-mortem-bg: rgba(220, 38, 38, 0.15);
+  --badge-post-mortem-text: #FCA5A5;
+  --badge-deep-dive-bg: rgba(37, 99, 235, 0.15);
+  --badge-deep-dive-text: #93C5FD;
+  --badge-reference-bg: rgba(22, 163, 74, 0.15);
+  --badge-reference-text: #86EFAC;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    overflow-x: clip;
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    overflow-x: clip;
+  }
+}
+
+.header-backdrop {
+  background-color: color-mix(in srgb, var(--bg-primary) 88%, transparent);
+}
