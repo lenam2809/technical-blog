@@ -61,7 +61,7 @@
 
 ---
 
-## [ ] TASK-04: Xây dựng Trang Đọc Bài Viết (`/blog/[slug]`), Sticky TOC & Ảnh OG Động
+## [x] TASK-04: Xây dựng Trang Đọc Bài Viết (`/blog/[slug]`), Sticky TOC & Ảnh OG Động
 - **Mục tiêu:** Hoàn thiện trải nghiệm đọc bài viết kỹ thuật chuyên sâu kèm mục lục cuộn tự động, huy hiệu môi trường, cảnh báo bài cũ, điều hướng chuỗi bài, JSON-LD và ảnh OpenGraph tự sinh.
 - **Phạm vi file cho phép:**
   - Routes: `src/app/blog/[slug]/page.tsx`, `src/app/blog/[slug]/opengraph-image.tsx`.
