@@ -23,7 +23,7 @@
 
 ---
 
-## [ ] TASK-02: Xây dựng Tầng Domain Repository, Zod 4 Schema, AST TOC, Bộ lọc & Unit Tests Cô lập
+## [x] TASK-02: Xây dựng Tầng Domain Repository, Zod 4 Schema, AST TOC, Bộ lọc & Unit Tests Cô lập
 - **Mục tiêu:** Triển khai toàn bộ lõi nghiệp vụ xử lý bài viết, kiểm chứng 6 quy tắc nghiệp vụ (`BR-01` đến `BR-06`) và 3 chốt chặn Fail-Fast Build Guards (`Guard 1` đến `Guard 3`) bằng bộ kiểm thử Vitest đọc dữ liệu từ `__fixtures__`.
 - **Phạm vi file cho phép:**
   - Hợp đồng & Nghiệp vụ: `src/types/post.ts`, `src/lib/toc.ts`, `src/lib/filters.ts`, `src/lib/seo.ts`, `src/lib/posts.ts`.

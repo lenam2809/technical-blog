@@ -1,0 +1,40 @@
+---
+title: "Xử lý lỗi ORA-00060 Deadlock trên Oracle 19c và Web API"
+slug: "oracle-deadlock-post-mortem"
+postType: "post-mortem"
+category: "database-sql"
+tags:
+  - "oracle"
+  - "deadlock"
+  - "plsql"
+publishedAt: "2026-05-10"
+updatedAt: "2026-05-15"
+summary: "Phân tích nguyên nhân gốc rễ gây khóa chéo ORA-00060 trên Oracle 19c khi gọi đồng thời từ ASP.NET Web API."
+environment:
+  - "Oracle 19c"
+  - ".NET 8"
+  - "Linux RHEL 9"
+impact: "Giảm 100% lỗi ORA-00060 lúc cao điểm"
+series:
+  name: "Tối ưu Oracle thực chiến"
+  order: 1
+featured: true
+draft: false
+sanitized: true
+---
+
+## Bối cảnh & Triệu chứng
+
+<Callout type="symptom" title="Cảnh báo khóa chéo trên bảng ORDERS">
+  Hệ thống ghi nhận ngoại lệ ORA-00060 khi hai tiến trình cập nhật ngược thứ tự dòng bản ghi.
+</Callout>
+
+```sql
+-- Đoạn truy vấn minh họa đã ẩn danh
+## Dòng này nằm trong code fence nên không được tính vào TOC
+UPDATE ORDERS SET STATUS = 'PAID' WHERE ORDER_ID = :p_id;
+```
+
+### Phân tích `Execution Plan`
+
+![Sơ đồ khóa chéo](/images/posts/deadlock-graph.png)

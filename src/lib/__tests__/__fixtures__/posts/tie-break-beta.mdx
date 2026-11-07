@@ -1,0 +1,18 @@
+---
+title: "Tối ưu hóa thủ tục PL/SQL xử lý lô dữ liệu hàng triệu bản ghi"
+slug: "tie-break-beta"
+postType: "deep-dive"
+category: "database-sql"
+tags:
+  - "plsql"
+  - "sql-optimization"
+publishedAt: "2026-03-01"
+summary: "Ứng dụng FORALL và BULK COLLECT trong PL/SQL giúp giảm thiểu chuyển ngữ cảnh giữa PL/SQL Engine và SQL Engine."
+featured: false
+draft: false
+sanitized: true
+---
+
+## Giảm Context Switching với FORALL
+
+Sử dụng mệnh đề `LIMIT 1000` để cân bằng tốc độ xử lý và bộ nhớ PGA.

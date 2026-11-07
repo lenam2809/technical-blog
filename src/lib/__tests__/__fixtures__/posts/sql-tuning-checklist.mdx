@@ -1,0 +1,18 @@
+---
+title: "Danh mục kiểm tra tối ưu hóa câu truy vấn SQL thực tế"
+slug: "sql-tuning-checklist"
+postType: "reference"
+category: "database-sql"
+tags:
+  - "oracle"
+  - "sql-optimization"
+publishedAt: "2026-04-01"
+summary: "Tổng hợp các quy tắc kiểm tra nhanh SARGability, Bind Variables và thống kê Optimizer trước khi đưa SQL lên Production."
+featured: false
+draft: false
+sanitized: true
+---
+
+## Kiểm tra kiểu dữ liệu Bind Variables
+
+Tránh ép kiểu ngầm định làm vô hiệu hóa Index trên cột `VARCHAR2`.

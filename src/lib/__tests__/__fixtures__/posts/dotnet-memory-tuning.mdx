@@ -1,0 +1,21 @@
+---
+title: "Tối ưu cấp phát bộ nhớ Large Object Heap trong .NET Web API"
+slug: "dotnet-memory-tuning"
+postType: "deep-dive"
+category: "dotnet-backend"
+tags:
+  - "dotnet"
+  - "csharp"
+  - "memory-management"
+publishedAt: "2026-04-20"
+summary: "Kinh nghiệm giảm áp lực Garbage Collection Gen 2 và phân mảnh LOH khi xuất báo cáo dữ liệu lớn trên .NET."
+impact: "Giảm 68% RAM tiêu thụ trên mỗi worker"
+canonicalUrl: "https://viblo.asia/p/dotnet-memory-tuning"
+featured: true
+draft: false
+sanitized: true
+---
+
+## Nguyên nhân phân mảnh Large Object Heap
+
+Sử dụng `ArrayPool<byte>` và streaming để tránh cấp phát mảng lớn hơn 85KB.

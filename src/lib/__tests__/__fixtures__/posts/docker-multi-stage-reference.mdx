@@ -1,0 +1,22 @@
+---
+title: "Sổ tay cấu hình Dockerfile Multi-stage cho Next.js và .NET"
+slug: "docker-multi-stage-reference"
+postType: "reference"
+category: "devops-modern-web"
+tags:
+  - "docker"
+  - "nextjs"
+  - "ci-cd"
+publishedAt: "2024-11-06"
+summary: "Mẫu cấu hình Dockerfile tối giản chạy dưới quyền non-root user cho ứng dụng Next.js standalone và ASP.NET Core."
+featured: true
+draft: false
+sanitized: true
+---
+
+## Cấu hình Dockerfile tối giản
+
+```dockerfile
+FROM node:22-alpine AS runner
+USER nextjs
+```
