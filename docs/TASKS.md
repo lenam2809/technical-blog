@@ -76,7 +76,7 @@
 
 ---
 
-## [ ] TASK-05: Xây dựng Trang Chủ SSG (`/`), Featured Case Studies, Archive Explorer & Trang Taxonomy Tĩnh
+## [x] TASK-05: Xây dựng Trang Chủ SSG (`/`), Featured Case Studies, Archive Explorer & Trang Taxonomy Tĩnh
 - **Mục tiêu:** Hoàn thiện trang chủ tĩnh 100% kết hợp bộ lọc tức thì đồng bộ URL (`BR-05`) và các trang chuyên mục/thẻ tĩnh chuẩn SEO.
 - **Phạm vi file cho phép:**
   - Routes: `src/app/page.tsx`, `src/app/category/[category]/page.tsx`, `src/app/tags/[tag]/page.tsx`.
