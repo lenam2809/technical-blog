@@ -91,7 +91,7 @@
 
 ---
 
-## [ ] TASK-06: Xây dựng Trang Hồ Sơ Năng Lực Dual-Track (`/about`) & Hệ Thống Sitemap, Robots, RSS
+## [x] TASK-06: Xây dựng Trang Hồ Sơ Năng Lực Dual-Track (`/about`) & Hệ Thống Sitemap, Robots, RSS
 - **Mục tiêu:** Hoàn thiện trang Portfolio kỹ thuật thuyết phục Nhà tuyển dụng & Khách hàng, đồng thời xuất bản Sitemap, Robots và RSS Feed tự động.
 - **Phạm vi file cho phép:**
   - `src/app/about/page.tsx`, `src/app/sitemap.ts`, `src/app/robots.ts`, `src/app/rss.xml/route.ts`.

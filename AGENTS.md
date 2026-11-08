@@ -44,3 +44,13 @@ Agent TUYỆT ĐỐI KHÔNG tự ý thực hiện 6 hành động sau nếu chư
 4. **Hợp đồng Dữ liệu & Tài liệu Đặc tả:** Tự ý sửa đổi `PostFrontmatterSchema`, `AllowedTagSchema` hoặc chỉnh sửa nội dung trong `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/DESIGN.md`.
 5. **Chuyển giao Nhiệm vụ:** Tự ý chuyển sang làm Task tiếp theo trong `docs/TASKS.md` khi Task hiện tại chưa được Developer nghiệm thu.
 6. **Quản lý Phiên bản & Bảo mật Nội dung:** Tự ý chạy lệnh `git commit`, `git push`, `git reset`, xóa bài viết trong `content/posts/`, hoặc tự ý đặt cờ `sanitized: true` cho bài viết thực tế mà chưa có xác nhận kiểm duyệt NDA từ Developer.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
