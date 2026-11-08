@@ -105,7 +105,7 @@
 
 ---
 
-## [ ] TASK-07: Tích hợp Tìm Kiếm Toàn Văn Tĩnh (Pagefind), Đóng gói Docker & Thiết Lập CI/CD
+## [x] TASK-07: Tích hợp Tìm Kiếm Toàn Văn Tĩnh (Pagefind), Đóng gói Docker & Thiết Lập CI/CD
 - **Mục tiêu:** Tích hợp công cụ tìm kiếm toàn văn tĩnh Pagefind, đóng gói ứng dụng vào Multi-stage Docker image gọn nhẹ và thiết lập GitHub Actions CI kiểm tra chất lượng tự động.
 - **Phạm vi file cho phép:**
   - `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `.github/workflows/ci.yml`, `package.json` (cập nhật script `postbuild` cho Pagefind nếu cần), cập nhật tích hợp giao diện tìm kiếm Pagefind trong `src/components/blog/ArchiveExplorer.tsx`.

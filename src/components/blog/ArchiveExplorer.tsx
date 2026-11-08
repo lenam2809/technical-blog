@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   ChevronDown,
   ChevronUp,
+  Loader2,
   RotateCcw,
   Search,
   SearchX,
@@ -24,6 +25,53 @@ import type {
 
 export interface ArchiveExplorerProps {
   initialPosts: readonly PostSummary[];
+}
+
+export interface PagefindResultData {
+  url: string;
+  excerpt?: string;
+  meta?: {
+    title?: string;
+  };
+}
+
+export interface PagefindSearchResult {
+  id: string;
+  score: number;
+  data: () => Promise<PagefindResultData>;
+}
+
+export interface PagefindSearchResponse {
+  results: PagefindSearchResult[];
+}
+
+export interface PagefindModule {
+  init?: () => Promise<void> | void;
+  search: (query: string) => Promise<PagefindSearchResponse>;
+}
+
+declare global {
+  interface Window {
+    pagefind?: PagefindModule;
+  }
+}
+
+const PAGEFIND_SCRIPT_URL = '/pagefind/pagefind.js';
+const PAGEFIND_MAX_RESULTS = 20;
+
+function isPagefindModule(value: unknown): value is PagefindModule {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'search' in value &&
+    typeof value.search === 'function'
+  );
+}
+
+function extractBlogSlugFromUrl(rawUrl: string): string | null {
+  const cleanPath = rawUrl.split(/[?#]/)[0] ?? '';
+  const match = cleanPath.match(/^\/?blog\/([a-z0-9-]+?)(?:\.html)?\/?$/);
+  return match?.[1] ?? null;
 }
 
 const POST_TYPE_OPTIONS: ReadonlyArray<{ value: PostType; label: string }> = [
@@ -71,11 +119,18 @@ export function ArchiveExplorer({
     urlCriteria.q ?? '',
   );
   const [showAllTags, setShowAllTags] = React.useState<boolean>(false);
+  const [pagefindMatches, setPagefindMatches] =
+    React.useState<ReadonlySet<string> | null>(null);
+  const [isPagefindSearching, setIsPagefindSearching] =
+    React.useState<boolean>(false);
 
   const debounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
   const isTypingRef = React.useRef<boolean>(false);
+  const pagefindLoadPromiseRef =
+    React.useRef<Promise<PagefindModule | null> | null>(null);
+  const pagefindUnavailableRef = React.useRef<boolean>(false);
 
   React.useEffect(() => {
     if (!isTypingRef.current) {
@@ -91,6 +146,55 @@ export function ArchiveExplorer({
     };
   }, []);
 
+  const loadPagefind =
+    React.useCallback(async (): Promise<PagefindModule | null> => {
+      if (typeof window === 'undefined' || pagefindUnavailableRef.current) {
+        return null;
+      }
+
+      if (window.pagefind && isPagefindModule(window.pagefind)) {
+        return window.pagefind;
+      }
+
+      if (pagefindLoadPromiseRef.current) {
+        return pagefindLoadPromiseRef.current;
+      }
+
+      const loader = (async (): Promise<PagefindModule | null> => {
+        try {
+          const scriptPath: string = PAGEFIND_SCRIPT_URL;
+          const imported: unknown = await import(
+            /* webpackIgnore: true */
+            /* turbopackIgnore: true */
+            scriptPath
+          );
+          if (!isPagefindModule(imported)) {
+            pagefindUnavailableRef.current = true;
+            return null;
+          }
+          if (typeof imported.init === 'function') {
+            await imported.init();
+          }
+          window.pagefind = imported;
+          return imported;
+        } catch {
+          // Khi chạy next dev trước lúc build public/pagefind, fallback mượt về bộ lọc BR-05
+          pagefindUnavailableRef.current = true;
+          return null;
+        } finally {
+          pagefindLoadPromiseRef.current = null;
+        }
+      })();
+
+      pagefindLoadPromiseRef.current = loader;
+      return loader;
+    }, []);
+
+  const validSlugsSet = React.useMemo(
+    () => new Set(initialPosts.map((post) => post.slug)),
+    [initialPosts],
+  );
+
   const activeCriteria: PostFilterCriteria = React.useMemo(
     () => ({
       category: urlCriteria.category,
@@ -101,10 +205,96 @@ export function ArchiveExplorer({
     [urlCriteria.category, urlCriteria.tag, urlCriteria.type, queryInput],
   );
 
-  const filteredPosts = React.useMemo(
-    () => filterPosts(initialPosts, activeCriteria),
-    [initialPosts, activeCriteria],
+  const trimmedQuery = activeCriteria.q ?? '';
+
+  React.useEffect(() => {
+    if (trimmedQuery.length < 2) {
+      setPagefindMatches(null);
+      setIsPagefindSearching(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsPagefindSearching(true);
+
+    const searchTimer = setTimeout(() => {
+      void (async () => {
+        try {
+          const pf = await loadPagefind();
+          if (isCancelled) return;
+
+          if (!pf) {
+            setPagefindMatches(null);
+            return;
+          }
+
+          const response = await pf.search(trimmedQuery);
+          if (isCancelled) return;
+
+          const topResults = response.results.slice(0, PAGEFIND_MAX_RESULTS);
+          const payloads = await Promise.all(
+            topResults.map((result) => result.data()),
+          );
+          if (isCancelled) return;
+
+          const matchedSlugs = new Set<string>();
+          for (const item of payloads) {
+            const slug = extractBlogSlugFromUrl(item.url);
+            if (slug && validSlugsSet.has(slug)) {
+              matchedSlugs.add(slug);
+            }
+          }
+
+          setPagefindMatches(matchedSlugs);
+        } catch {
+          if (!isCancelled) {
+            setPagefindMatches(null);
+          }
+        } finally {
+          if (!isCancelled) {
+            setIsPagefindSearching(false);
+          }
+        }
+      })();
+    }, 180);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(searchTimer);
+    };
+  }, [trimmedQuery, loadPagefind, validSlugsSet]);
+
+  const structuralPosts = React.useMemo(
+    () =>
+      filterPosts(initialPosts, {
+        category: activeCriteria.category,
+        tag: activeCriteria.tag,
+        type: activeCriteria.type,
+      }),
+    [
+      initialPosts,
+      activeCriteria.category,
+      activeCriteria.tag,
+      activeCriteria.type,
+    ],
   );
+
+  const filteredPosts = React.useMemo(() => {
+    const query = activeCriteria.q;
+    if (!query) {
+      return structuralPosts;
+    }
+
+    const metadataMatched = filterPosts(structuralPosts, { q: query });
+    if (query.length < 2 || pagefindMatches === null) {
+      return metadataMatched;
+    }
+
+    const metadataSlugs = new Set(metadataMatched.map((post) => post.slug));
+    return structuralPosts.filter(
+      (post) => metadataSlugs.has(post.slug) || pagefindMatches.has(post.slug),
+    );
+  }, [structuralPosts, activeCriteria.q, pagefindMatches]);
 
   const hasAnyFilter = Boolean(
     activeCriteria.category ||
@@ -246,15 +436,21 @@ export function ArchiveExplorer({
             {filteredPosts.length}
           </span>{' '}
           / {initialPosts.length} bài viết kỹ thuật
+          {isPagefindSearching && (
+            <span className="ml-2 text-[var(--accent-primary)]">
+              • Đang quét toàn văn...
+            </span>
+          )}
         </p>
       </div>
 
-      {/* Khung điều khiển Bộ lọc & Tìm kiếm không dấu (BR-05) */}
+      {/* Khung điều khiển Bộ lọc & Tìm kiếm không dấu + Pagefind toàn văn */}
       <div className="mt-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-4 sm:p-6">
-        {/* Ô tìm kiếm tức thì hỗ trợ tiếng Việt không dấu */}
+        {/* Ô tìm kiếm tức thì hỗ trợ tiếng Việt không dấu và Pagefind toàn văn */}
         <div className="relative">
           <label htmlFor="archive-search-input" className="sr-only">
-            Tìm kiếm bài viết kỹ thuật theo từ khóa có dấu hoặc không dấu
+            Tìm kiếm bài viết kỹ thuật theo từ khóa có dấu, không dấu hoặc nội
+            dung code toàn văn
           </label>
           <Search
             className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]"
@@ -265,9 +461,20 @@ export function ArchiveExplorer({
             type="search"
             value={queryInput}
             onChange={handleQueryChange}
-            placeholder="Tìm nhanh không dấu theo tiêu đề, môi trường, chỉ số (VD: deadlock, bao cao, oracle 19c, docker)..."
-            className="w-full rounded-xl border border-[var(--border-strong)] bg-[var(--bg-primary)] py-2.5 pr-10 pl-10 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            placeholder="Tìm nhanh không dấu & toàn văn code/nội dung (VD: deadlock, bao cao, ArrayPool, docker)..."
+            className={[
+              'w-full rounded-xl border border-[var(--border-strong)] bg-[var(--bg-primary)] py-2.5 pl-10 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500/40',
+              isPagefindSearching && queryInput.length > 0
+                ? 'pr-16'
+                : 'pr-10',
+            ].join(' ')}
           />
+          {isPagefindSearching && (
+            <Loader2
+              className="pointer-events-none absolute top-1/2 right-10 h-4 w-4 -translate-y-1/2 animate-spin text-[var(--accent-primary)]"
+              aria-hidden={true}
+            />
+          )}
           {queryInput.length > 0 && (
             <button
               type="button"
